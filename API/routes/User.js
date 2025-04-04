@@ -1,10 +1,8 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { User } from '../../DB/models/User.js';
 import { checkAuth } from '../middleware/auth.js';
-import { token } from 'morgan';
 const router = express.Router();
 
 router.post('/login', (req, res) => {
@@ -82,7 +80,6 @@ router.post('/register', (req, res) => {
   });
     
 
-// acess any api
 
 router.post('/access', checkAuth, (req, res) => {
     

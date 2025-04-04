@@ -1,7 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
-import { token } from 'morgan';
 
 const user = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
