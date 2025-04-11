@@ -3,6 +3,7 @@ import morgan from 'morgan';
 import cors from 'cors';
 import connectDB from './DB/Connection.js';
 import router from './API/routes/User.js';
+import adminRouter from './API/routes/Admin.js';
 import projectRouter from './API/routes/Project.js';
 const app = express();
 connectDB();
@@ -12,5 +13,5 @@ app.use(express.json());
 app.use(morgan('dev'));
 app.use('/user',router);
 app.use('/project',projectRouter);
-
+app.use('/admin',adminRouter);
 export default app;

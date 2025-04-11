@@ -1,6 +1,6 @@
 import http from 'http';
 import app from './app.js';
-import './cron/projectEmail.js';
+// import './cron/projectEmail.js';
 
 const port = process.env.PORT || 3000;
 

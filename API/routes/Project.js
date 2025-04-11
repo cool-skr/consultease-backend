@@ -1,13 +1,10 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import bcrypt from 'bcrypt';
-import { User } from '../../DB/models/User.js';
-import { checkAuth } from '../middleware/auth.js';
 import {google} from 'googleapis';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import { Readable } from 'stream';
-
+import { mapRowToProject } from '../../utils/projectMapper.js';
+import { uploadMultiple } from '../../utils/fileUploadUtils.js';
 dotenv.config();
 const projectRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -34,10 +31,11 @@ projectRouter.post('/submit', upload.fields([
   try {
     const auth = await authenticate();
 
-    const drive = google.drive({ version: 'v3', auth });
     const sheets = google.sheets({ version: 'v4', auth });
 
     const SPREADSHEET_ID = process.env.SHEET_ID;
+
+    const projectId = new mongoose.Types.ObjectId().toString();
 
     const {
       email,
@@ -52,47 +50,8 @@ projectRouter.post('/submit', upload.fields([
       studentDetails,
       projectSummary
     } = req.body;
+    const completed = "no";
 
-    const uploadFile = async (fileBuffer, fileName, mimeType, email, fileType, index) => {
-        const newFileName = `${email}_${fileType}${index + 1}${fileName.substring(fileName.lastIndexOf('.'))}`;
-        
-        const res = await drive.files.create({
-            requestBody: {
-                name: newFileName,
-                mimeType: mimeType,
-                parents: [process.env.DRIVE_FOLDER_ID]
-            },
-            media: {
-                mimeType: mimeType,
-                body: Readable.from(fileBuffer)
-            }
-        });
-
-        const fileId = res.data.id;
-
-        await drive.permissions.create({
-            fileId,
-            requestBody: {
-                role: 'reader',
-                type: 'anyone'
-            }
-        });
-
-        return `https://drive.google.com/uc?id=${fileId}`;
-    };
-      
-
-    const uploadMultiple = async (filesArray = [], email, fileType) => {
-        const links = [];
-        for (let i = 0; i < filesArray.length; i++) {
-            const file = filesArray[i];
-            const link = await uploadFile(file.buffer, file.originalname, file.mimetype, email, fileType, i);
-            links.push(link);
-        }
-        return links;
-    };
-
-    // Update the calls to uploadMultiple with correct parameters
     const billSettlementLinks = await uploadMultiple(req.files['billSettlement'], email, 'billSettlement');
     const agreementLinks = await uploadMultiple(req.files['agreement'], email, 'agreement');
 
@@ -101,6 +60,7 @@ projectRouter.post('/submit', upload.fields([
       : projectDuration;
 
     const row = [
+      projectId, 
       email,
       industryName,
       formattedDuration,
@@ -113,7 +73,8 @@ projectRouter.post('/submit', upload.fields([
       studentDetails,
       projectSummary,
       billSettlementLinks.join(', '),
-      agreementLinks.join(', ')
+      agreementLinks.join(', '),
+      completed
     ];
 
     await sheets.spreadsheets.values.append({
@@ -126,7 +87,10 @@ projectRouter.post('/submit', upload.fields([
       }
     });
 
-    res.status(200).send('Project submitted successfully!');
+    res.status(200).json({ 
+      message: 'Project submitted successfully!',
+      projectId: projectId 
+    });
   } catch (error) {
     console.error('Error submitting project:', error);
     res.status(500).send('Error submitting project');
@@ -149,21 +113,9 @@ projectRouter.get('/fetch/:email', async (req, res) => {
             return res.status(404).json({ message: 'No data found' });
         }
 
-        const userProjects = rows.slice(1).filter(row => row[0] === userEmail).map(row => ({
-            email: row[0],
-            industryName: row[1],
-            projectDuration: row[2],
-            projectTitle: row[3],
-            principalInvestigator: row[4],
-            coPrincipalInvestigator: row[5],
-            academicYear: row[6],
-            amountSanctioned: row[7],
-            amountReceived: row[8],
-            studentDetails: row[9],
-            projectSummary: row[10],
-            billSettlement: row[11],
-            agreement: row[12]
-        }));
+        const userProjects = rows.slice(1)
+            .filter(row => row[1] === userEmail)
+            .map(row => mapRowToProject(row));
 
         if (userProjects.length === 0) {
             return res.status(404).json({ message: 'No projects found for this email' });
@@ -191,26 +143,195 @@ projectRouter.get('/admin/fetch', async (req, res) => {
             return res.status(404).json({ message: 'No data found' });
         }
 
-        const allProjects = rows.slice(1).map(row => ({
-            email: row[0],
-            industryName: row[1],
-            projectDuration: row[2],
-            projectTitle: row[3],
-            principalInvestigator: row[4],
-            coPrincipalInvestigator: row[5],
-            academicYear: row[6],
-            amountSanctioned: row[7],
-            amountReceived: row[8],
-            studentDetails: row[9],
-            projectSummary: row[10],
-            billSettlement: row[11],
-            agreement: row[12]
-        }));
+        const allProjects = rows.slice(1).map(row => mapRowToProject(row));
 
         res.status(200).json(allProjects);
     } catch (error) {
         console.error('Error fetching projects:', error);
         res.status(500).json({ message: 'Error fetching projects' });
+    }
+});
+
+projectRouter.get('/fetch/project/:projectId', async (req, res) => {
+    try {
+        const auth = await authenticate();
+        const sheets = google.sheets({ version: 'v4', auth });
+        const projectId = req.params.projectId;
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: process.env.SHEET_ID,
+            range: 'Sheet1'
+        });
+
+        const rows = response.data.values;
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'No data found' });
+        }
+
+        const project = rows.slice(1).find(row => row[0] === projectId);
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        const projectData = mapRowToProject(project);
+
+        res.status(200).json(projectData);
+    } catch (error) {
+        console.error('Error fetching project:', error);
+        res.status(500).json({ message: 'Error fetching project' });
+    }
+});
+
+projectRouter.delete('/delete/:projectId', async (req, res) => {
+    try {
+        const auth = await authenticate();
+        const sheets = google.sheets({ version: 'v4', auth });
+        const projectId = req.params.projectId;
+
+        const spreadsheet = await sheets.spreadsheets.get({
+            spreadsheetId: process.env.SHEET_ID,
+            fields: 'sheets.properties'
+        });
+        
+        if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
+            return res.status(404).json({ message: 'Sheet not found' });
+        }
+
+        const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
+        
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: process.env.SHEET_ID,
+            range: 'Sheet1!A:A'
+        });
+
+        const rows = response.data.values || [];
+        
+        const rowIndex = rows.findIndex(row => row[0] === projectId);
+        if (rowIndex === -1) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: process.env.SHEET_ID,
+            requestBody: {
+                requests: [{
+                    deleteDimension: {
+                        range: {
+                            sheetId: sheetId,
+                            dimension: 'ROWS',
+                            startIndex: rowIndex, 
+                            endIndex: rowIndex + 1
+                        }
+                    }
+                }]
+            }
+        });
+
+        res.status(200).json({ message: 'Project deleted successfully' });
+    } catch (error) {
+        console.error('Delete error:', {
+            message: error.message,
+            response: error.response?.data
+        });
+        res.status(500).json({ 
+            message: 'Failed to delete project',
+            error: error.message 
+        });
+    }
+});
+
+projectRouter.put('/update/:projectId', upload.fields([
+    { name: 'billSettlement' },
+    { name: 'agreement' }
+]), async (req, res) => {
+    try {
+        const auth = await authenticate();
+        const sheets = google.sheets({ version: 'v4', auth });
+        const { projectId } = req.params;
+        
+        const [spreadsheet, valuesResponse] = await Promise.all([
+            sheets.spreadsheets.get({
+                spreadsheetId: process.env.SHEET_ID,
+                fields: 'sheets.properties'
+            }),
+            sheets.spreadsheets.values.get({
+                spreadsheetId: process.env.SHEET_ID,
+                range: 'Sheet1'
+            })
+        ]);
+
+        const rows = valuesResponse.data.values || [];
+        const rowIndex = rows.findIndex(row => row[0] === projectId);
+        
+        if (rowIndex === -1) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
+        const currentRow = rows[rowIndex];
+
+        let billSettlementLinks = (currentRow[12] || '').split(', ');
+        if (req.files['billSettlement']) {
+            billSettlementLinks = await uploadMultiple(req.files['billSettlement'], req.body.email || currentRow[1], 'billSettlement');
+        }
+
+        let agreementLinks = (currentRow[13] || '').split(', ');
+        if (req.files['agreement']) {
+            agreementLinks = await uploadMultiple(req.files['agreement'], req.body.email || currentRow[1], 'Agreement');
+        }
+
+        const updatedRow = [
+            projectId,
+            req.body.email || currentRow[1],
+            req.body.industryName || currentRow[2],
+            req.body.projectDuration ? 
+                (Array.isArray(req.body.projectDuration) ? 
+                    req.body.projectDuration.join(' to ') : 
+                    req.body.projectDuration) : 
+                currentRow[3],
+            req.body.projectTitle || currentRow[4],
+            req.body.principalInvestigator || currentRow[5],
+            req.body.coPrincipalInvestigator || currentRow[6],
+            req.body.academicYear || currentRow[7],
+            req.body.amountSanctioned || currentRow[8],
+            req.body.amountReceived || currentRow[9],
+            req.body.studentDetails || currentRow[10],
+            req.body.projectSummary || currentRow[11],
+            billSettlementLinks.join(', '),
+            agreementLinks.join(', '),
+            req.body.completed || currentRow[14]
+        ];
+
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: process.env.SHEET_ID,
+            requestBody: {
+                requests: [{
+                    updateCells: {
+                        range: {
+                            sheetId,
+                            startRowIndex: rowIndex,
+                            endRowIndex: rowIndex + 1,
+                            startColumnIndex: 0,
+                            endColumnIndex: updatedRow.length
+                        },
+                        rows: [{ values: updatedRow.map(value => ({ userEnteredValue: { stringValue: value } })) }],
+                        fields: 'userEnteredValue'
+                    }
+                }]
+            }
+        });
+
+        res.status(200).json({ 
+            message: 'Project updated successfully',
+            projectId
+        });
+    } catch (error) {
+        console.error('Update error:', error);
+        res.status(500).json({ 
+            message: 'Error updating project',
+            error: error.message 
+        });
     }
 });
 

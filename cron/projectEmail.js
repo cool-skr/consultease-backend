@@ -2,18 +2,20 @@ import cron from 'node-cron';
 import axios from 'axios';
 import nodemailer from 'nodemailer';
 import { parse, isAfter } from 'date-fns';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'your_email@gmail.com',
-    pass: 'your_app_password'     
+    user : process.env.my_email,
+    pass : process.env.my_pass,
   }
 });
 
 const sendReminder = async (email, industryName, endDate) => {
   const mailOptions = {
-    from: 'your_email@gmail.com',
+    from : process.env.my_email,
     to: email,
     subject: 'Project Reminder',
     text: `Your project with ${industryName} ended on ${endDate.toDateString()}. Please update its status.`
@@ -26,8 +28,8 @@ const sendReminder = async (email, industryName, endDate) => {
     console.error(`Error sending to ${email}:`, err.message);
   }
 };
-
-cron.schedule('*/12 * * * *', async () => {
+// '0 0 1,15 * *' - 15 days
+cron.schedule('*/1 * * * *', async () => {
   console.log('Running project reminder cron...');
 
   try {
@@ -37,15 +39,24 @@ cron.schedule('*/12 * * * *', async () => {
     const today = new Date();
 
     for (const project of projects) {
-      const { email, industryName, projectDuration } = project;
+      const { email, industryName, projectDuration , completed } = project;
 
-      if (!projectDuration) continue;
+      if (completed==="yes" || !projectDuration) continue;
 
       const [ , endStr ] = projectDuration.split(' - ');
-      const endDate = parse(`01 ${endStr}`, 'dd MMM yyyy', new Date());
-
-      if (isAfter(today, endDate)) {
-        await sendReminder(email, industryName, endDate);
+      
+      const endDateParts = endStr.split(' ');
+      const month = endDateParts[0]; 
+      const year = endDateParts[1];  
+      
+      const nextMonth = new Date(`${month} 1, ${year}`);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      
+      const lastDayOfMonth = new Date(nextMonth);
+      lastDayOfMonth.setDate(lastDayOfMonth.getDate() - 1);
+      
+      if (isAfter(today, lastDayOfMonth)) {
+        await sendReminder(email, industryName, lastDayOfMonth);
       }
     }
   } catch (err) {
