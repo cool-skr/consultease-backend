@@ -4,7 +4,7 @@ import {google} from 'googleapis';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import { mapRowToProject } from '../../utils/projectMapper.js';
-import { uploadMultiple } from '../../utils/fileUploadUtils.js';
+import { uploadMultiple,deleteProjectFiles } from '../../utils/fileUploadUtils.js';
 dotenv.config();
 const projectRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -52,8 +52,8 @@ projectRouter.post('/submit', upload.fields([
     } = req.body;
     const completed = "no";
 
-    const billSettlementLinks = await uploadMultiple(req.files['billSettlement'], email, 'billSettlement');
-    const agreementLinks = await uploadMultiple(req.files['agreement'], email, 'agreement');
+    const billSettlementLinks = await uploadMultiple(req.files['billSettlement'], projectId+email, 'billSettlement');
+    const agreementLinks = await uploadMultiple(req.files['agreement'], projectId+email, 'agreement');
 
     const formattedDuration = Array.isArray(projectDuration)
       ? projectDuration.join(' to ')
@@ -211,7 +211,11 @@ projectRouter.delete('/delete/:projectId', async (req, res) => {
         if (rowIndex === -1) {
             return res.status(404).json({ message: 'Project not found' });
         }
-
+        
+        const deleteSuccess = await deleteProjectFiles(projectId);
+        if (!deleteSuccess) {
+            console.log(`Failed to delete Drive folder for project ${projectId}`);
+        }
         await sheets.spreadsheets.batchUpdate({
             spreadsheetId: process.env.SHEET_ID,
             requestBody: {
@@ -273,12 +277,12 @@ projectRouter.put('/update/:projectId', upload.fields([
 
         let billSettlementLinks = (currentRow[12] || '').split(', ');
         if (req.files['billSettlement']) {
-            billSettlementLinks = await uploadMultiple(req.files['billSettlement'], req.body.email || currentRow[1], 'billSettlement');
+            billSettlementLinks = await uploadMultiple(req.files['billSettlement'], projectId+(req.body.email || currentRow[1]), 'billSettlement',true);
         }
 
         let agreementLinks = (currentRow[13] || '').split(', ');
         if (req.files['agreement']) {
-            agreementLinks = await uploadMultiple(req.files['agreement'], req.body.email || currentRow[1], 'Agreement');
+            agreementLinks = await uploadMultiple(req.files['agreement'], projectId+(req.body.email || currentRow[1]), 'agreement',true);
         }
 
         const updatedRow = [
