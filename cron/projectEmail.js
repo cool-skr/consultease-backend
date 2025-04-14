@@ -12,8 +12,22 @@ const transporter = nodemailer.createTransport({
     pass : process.env.my_pass,
   }
 });
+const sendReminder = async (email) => {
+  const mailOptions = {
+    from : process.env.my_email,
+    to: email,
+    subject: 'Project Updation Reminder',
+    text: `Dear user, this is a reminder to update any new projects in the consultease portal. Thank You.`
+  };
 
-const sendReminder = async (email, industryName, endDate) => {
+  try {
+    await transporter.sendMail(mailOptions);
+    console.log(`Reminder sent to ${email}`);
+  } catch (err) {
+    console.error(`Error sending to ${email}:`, err.message);
+  }
+}
+const sendProjectReminder = async (email, industryName, endDate) => {
   const mailOptions = {
     from : process.env.my_email,
     to: email,
@@ -48,8 +62,9 @@ cron.schedule('*/1 * * * *', async () => {
       const endDate = parse(endStr, 'dd MMMM yyyy', new Date());
 
       if (isAfter(today, endDate)) {
-        await sendReminder(email, industryName, endDate);
+        await sendProjectReminder(email, industryName, endDate);
       }
+      await sendReminder(email); 
     }
   } catch (err) {
     console.error('Cron job error:', err.message);
