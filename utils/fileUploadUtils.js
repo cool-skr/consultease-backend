@@ -76,36 +76,27 @@ const uploadFile = async (fileBuffer, fileName, mimeType, email, fileType, index
     return `https://drive.google.com/uc?id=${fileId}`;
 };
   
-async function deleteOldFiles(folderId, fileType) {
-    try {
-        const res = await drive.files.list({
-            q: `name contains '${fileType}' and '${folderId}' in parents and trashed=false`,
-            fields: 'files(id)'
-        });
-        
-        await Promise.all(
-            res.data.files.map(file => 
-                drive.files.delete({ fileId: file.id })
-            )
-        );
-        return true;
-    } catch (error) {
-        console.error('Error deleting old files:', error);
-        return false;
-    }
-}
 
-export const uploadMultiple = async (filesArray = [], email, fileType, shouldDeleteOld = false) => {
+export const deleteFiles = async (files) => {
+    files = Array.isArray(files) ? files : [files];
+    for (const link of files) {
+        const fileId = link.split('id=')[1];
+        if (fileId) {
+            try {
+                await drive.files.delete({ fileId });
+            } catch (error) {
+                console.error(`Error deleting file with ID ${fileId}:`, error);
+            }
+        }
+    }
+    
+};
+export const uploadMultiple = async (filesArray = [], email, fileType,v = 0) => {
     const links = [];
     const folderId = await getOrCreateFolder(email);
-
-    if (shouldDeleteOld) {
-        await deleteOldFiles(folderId, fileType);
-    }
-
     for (let i = 0; i < filesArray.length; i++) {
         const file = filesArray[i];
-        const link = await uploadFile(file.buffer, file.originalname, file.mimetype, email, fileType, i);
+        const link = await uploadFile(file.buffer, file.originalname, file.mimetype, email, fileType, i + v);
         links.push(link);
     }
     return links;

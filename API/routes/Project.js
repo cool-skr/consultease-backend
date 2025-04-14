@@ -1,20 +1,20 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import {google} from 'googleapis';
+import { google } from 'googleapis';
 import dotenv from 'dotenv';
 import multer from 'multer';
 import { mapRowToProject } from '../../utils/projectMapper.js';
-import { uploadMultiple,deleteProjectFiles } from '../../utils/fileUploadUtils.js';
+import { uploadMultiple, deleteProjectFiles, deleteFiles } from '../../utils/fileUploadUtils.js';
 dotenv.config();
 const projectRouter = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-const SERVICE_ACCOUNT_FILE =process.env.KEY_URL;
+const SERVICE_ACCOUNT_FILE = process.env.KEY_URL;
 const SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets"
-  ];
-  
+];
+
 async function authenticate() {
     const auth = new google.auth.GoogleAuth({
         keyFile: SERVICE_ACCOUNT_FILE,
@@ -25,76 +25,76 @@ async function authenticate() {
 
 
 projectRouter.post('/submit', upload.fields([
-  { name: 'billSettlement' },
-  { name: 'agreement' }
+    { name: 'billSettlement' },
+    { name: 'agreement' }
 ]), async (req, res) => {
-  try {
-    const auth = await authenticate();
+    try {
+        const auth = await authenticate();
 
-    const sheets = google.sheets({ version: 'v4', auth });
+        const sheets = google.sheets({ version: 'v4', auth });
 
-    const SPREADSHEET_ID = process.env.SHEET_ID;
+        const SPREADSHEET_ID = process.env.SHEET_ID;
 
-    const projectId = new mongoose.Types.ObjectId().toString();
+        const projectId = new mongoose.Types.ObjectId().toString();
 
-    const {
-      email,
-      industryName,
-      projectDuration,
-      projectTitle,
-      principalInvestigator,
-      coPrincipalInvestigator,
-      academicYear,
-      amountSanctioned,
-      amountReceived,
-      studentDetails,
-      projectSummary
-    } = req.body;
-    const completed = "no";
+        const {
+            email,
+            industryName,
+            projectDuration,
+            projectTitle,
+            principalInvestigator,
+            coPrincipalInvestigator,
+            academicYear,
+            amountSanctioned,
+            amountReceived,
+            studentDetails,
+            projectSummary
+        } = req.body;
+        const completed = "no";
 
-    const billSettlementLinks = await uploadMultiple(req.files['billSettlement'], projectId+email, 'billSettlement');
-    const agreementLinks = await uploadMultiple(req.files['agreement'], projectId+email, 'agreement');
+        const billSettlementLinks = await uploadMultiple(req.files['billSettlement'], projectId + email, 'billSettlement');
+        const agreementLinks = await uploadMultiple(req.files['agreement'], projectId + email, 'agreement');
 
-    const formattedDuration = Array.isArray(projectDuration)
-      ? projectDuration.join(' to ')
-      : projectDuration;
+        const formattedDuration = Array.isArray(projectDuration)
+            ? projectDuration.join(' to ')
+            : projectDuration;
 
-    const row = [
-      projectId, 
-      email,
-      industryName,
-      formattedDuration,
-      projectTitle,
-      principalInvestigator,
-      coPrincipalInvestigator,
-      academicYear,
-      amountSanctioned,
-      amountReceived,
-      studentDetails,
-      projectSummary,
-      billSettlementLinks.join(', '),
-      agreementLinks.join(', '),
-      completed
-    ];
+        const row = [
+            projectId,
+            email,
+            industryName,
+            formattedDuration,
+            projectTitle,
+            principalInvestigator,
+            coPrincipalInvestigator,
+            academicYear,
+            amountSanctioned,
+            amountReceived,
+            studentDetails,
+            projectSummary,
+            billSettlementLinks.join(','),
+            agreementLinks.join(','),
+            completed
+        ];
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Sheet1!A1',
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: {
-        values: [row]
-      }
-    });
+        await sheets.spreadsheets.values.append({
+            spreadsheetId: SPREADSHEET_ID,
+            range: 'Sheet1!A1',
+            valueInputOption: 'RAW',
+            insertDataOption: 'INSERT_ROWS',
+            requestBody: {
+                values: [row]
+            }
+        });
 
-    res.status(200).json({ 
-      message: 'Project submitted successfully!',
-      projectId: projectId 
-    });
-  } catch (error) {
-    console.error('Error submitting project:', error);
-    res.status(500).send('Error submitting project');
-  }
+        res.status(200).json({
+            message: 'Project submitted successfully!',
+            projectId: projectId
+        });
+    } catch (error) {
+        console.error('Error submitting project:', error);
+        res.status(500).send('Error submitting project');
+    }
 });
 
 projectRouter.get('/fetch/:email', async (req, res) => {
@@ -193,25 +193,25 @@ projectRouter.delete('/delete/:projectId', async (req, res) => {
             spreadsheetId: process.env.SHEET_ID,
             fields: 'sheets.properties'
         });
-        
+
         if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
             return res.status(404).json({ message: 'Sheet not found' });
         }
 
         const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
-        
+
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: process.env.SHEET_ID,
             range: 'Sheet1!A:A'
         });
 
         const rows = response.data.values || [];
-        
+
         const rowIndex = rows.findIndex(row => row[0] === projectId);
         if (rowIndex === -1) {
             return res.status(404).json({ message: 'Project not found' });
         }
-        
+
         const deleteSuccess = await deleteProjectFiles(projectId);
         if (!deleteSuccess) {
             console.log(`Failed to delete Drive folder for project ${projectId}`);
@@ -224,7 +224,7 @@ projectRouter.delete('/delete/:projectId', async (req, res) => {
                         range: {
                             sheetId: sheetId,
                             dimension: 'ROWS',
-                            startIndex: rowIndex, 
+                            startIndex: rowIndex,
                             endIndex: rowIndex + 1
                         }
                     }
@@ -238,9 +238,9 @@ projectRouter.delete('/delete/:projectId', async (req, res) => {
             message: error.message,
             response: error.response?.data
         });
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Failed to delete project',
-            error: error.message 
+            error: error.message
         });
     }
 });
@@ -253,7 +253,7 @@ projectRouter.put('/update/:projectId', upload.fields([
         const auth = await authenticate();
         const sheets = google.sheets({ version: 'v4', auth });
         const { projectId } = req.params;
-        
+
         const [spreadsheet, valuesResponse] = await Promise.all([
             sheets.spreadsheets.get({
                 spreadsheetId: process.env.SHEET_ID,
@@ -267,32 +267,55 @@ projectRouter.put('/update/:projectId', upload.fields([
 
         const rows = valuesResponse.data.values || [];
         const rowIndex = rows.findIndex(row => row[0] === projectId);
-        
+
         if (rowIndex === -1) {
             return res.status(404).json({ message: 'Project not found' });
         }
 
         const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
         const currentRow = rows[rowIndex];
-
-        let billSettlementLinks = (currentRow[12] || '').split(', ');
+        let billSettlementLinks = req.undeleted_billSettlement ?
+            (Array.isArray(req.body.undeleted_billSettlement) ?
+                [...req.body.undeleted_billSettlement] :
+                [req.body.undeleted_billSettlement]) : [];
+        if (req.body.deleted_billSettlement) {
+            await deleteFiles(req.body.deleted_billSettlement);
+        }
         if (req.files['billSettlement']) {
-            billSettlementLinks = await uploadMultiple(req.files['billSettlement'], projectId+(req.body.email || currentRow[1]), 'billSettlement',true);
+            billSettlementLinks = [
+                ...billSettlementLinks,
+                ...(await uploadMultiple(
+                    req.files['billSettlement'],
+                    projectId + (req.body.email || currentRow[1]),
+                    'billSettlement',
+                    ([].concat(req.body.undeleted_billSettlement || []).length)
+                ))
+            ];
         }
-
-        let agreementLinks = (currentRow[13] || '').split(', ');
+        let agreementLinks = req.body.undeleted_agreement ?
+            (Array.isArray(req.body.undeleted_agreement) ?
+                [...req.body.undeleted_agreement] :
+                [req.body.undeleted_agreement]) :
+            [];
+        if (req.body.deleted_agreement) {
+            await deleteFiles(req.body.deleted_agreement);
+        }
         if (req.files['agreement']) {
-            agreementLinks = await uploadMultiple(req.files['agreement'], projectId+(req.body.email || currentRow[1]), 'agreement',true);
+            agreementLinks = [...agreementLinks, ...(await uploadMultiple(
+                req.files['agreement'],
+                projectId + (req.body.email || currentRow[1]),
+                'agreement',
+                ([].concat(req.body.undeleted_agreement || []).length)
+            ))];
         }
-
         const updatedRow = [
             projectId,
             req.body.email || currentRow[1],
             req.body.industryName || currentRow[2],
-            req.body.projectDuration ? 
-                (Array.isArray(req.body.projectDuration) ? 
-                    req.body.projectDuration.join(' to ') : 
-                    req.body.projectDuration) : 
+            req.body.projectDuration ?
+                (Array.isArray(req.body.projectDuration) ?
+                    req.body.projectDuration.join(' to ') :
+                    req.body.projectDuration) :
                 currentRow[3],
             req.body.projectTitle || currentRow[4],
             req.body.principalInvestigator || currentRow[5],
@@ -302,8 +325,8 @@ projectRouter.put('/update/:projectId', upload.fields([
             req.body.amountReceived || currentRow[9],
             req.body.studentDetails || currentRow[10],
             req.body.projectSummary || currentRow[11],
-            billSettlementLinks.join(', '),
-            agreementLinks.join(', '),
+            billSettlementLinks.join(','),
+            agreementLinks.join(','),
             req.body.completed || currentRow[14]
         ];
 
@@ -326,15 +349,15 @@ projectRouter.put('/update/:projectId', upload.fields([
             }
         });
 
-        res.status(200).json({ 
+        res.status(200).json({
             message: 'Project updated successfully',
             projectId
         });
     } catch (error) {
         console.error('Update error:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Error updating project',
-            error: error.message 
+            error: error.message
         });
     }
 });

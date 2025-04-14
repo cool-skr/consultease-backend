@@ -39,24 +39,16 @@ cron.schedule('*/1 * * * *', async () => {
     const today = new Date();
 
     for (const project of projects) {
-      const { email, industryName, projectDuration , completed } = project;
+      const { email, industryName, projectDuration, completed } = project;
 
-      if (completed==="yes" || !projectDuration) continue;
+      if (completed === "yes" || !projectDuration) continue;
 
       const [ , endStr ] = projectDuration.split(' - ');
-      
-      const endDateParts = endStr.split(' ');
-      const month = endDateParts[0]; 
-      const year = endDateParts[1];  
-      
-      const nextMonth = new Date(`${month} 1, ${year}`);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      
-      const lastDayOfMonth = new Date(nextMonth);
-      lastDayOfMonth.setDate(lastDayOfMonth.getDate() - 1);
-      
-      if (isAfter(today, lastDayOfMonth)) {
-        await sendReminder(email, industryName, lastDayOfMonth);
+
+      const endDate = parse(endStr, 'dd MMMM yyyy', new Date());
+
+      if (isAfter(today, endDate)) {
+        await sendReminder(email, industryName, endDate);
       }
     }
   } catch (err) {
