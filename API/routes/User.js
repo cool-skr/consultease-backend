@@ -81,6 +81,25 @@ router.post('/register', (req, res) => {
     
 
 
+router.post('/userExists', (req, res) => {
+    const { email } = req.body;
+    User.findOne({ email })
+        .exec()
+        .then(user => {
+            if (user) {
+                res.status(200).json({ exists: true });
+            } else {
+                res.status(200).json({ exists: false });
+            }
+        })
+        .catch(err => {
+            res.status(500).json({
+                message: 'Internal server error',
+                error: err
+            });
+        });
+});
+
 router.post('/access', checkAuth, (req, res) => {
     
     res.status(200).json({

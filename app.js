@@ -6,7 +6,12 @@ import router from './API/routes/User.js';
 import adminRouter from './API/routes/Admin.js';
 import projectRouter from './API/routes/Project.js';
 const app = express();
-connectDB();
+
+// Connect to DB only if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  connectDB();
+}
+
 app.use(cors()); 
 app.use(express.urlencoded({ extended: false }))
 app.use(express.json());
